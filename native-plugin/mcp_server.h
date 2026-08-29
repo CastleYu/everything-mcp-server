@@ -1,29 +1,42 @@
-#ifndef MCP_SERVER_H
-#define MCP_SERVER_H
+#ifndef _MCP_SERVER_H_
+#define _MCP_SERVER_H_
 
+#include <windows.h>
+#include <stdint.h>
+#include <stdbool.h>
 #include "everything_plugin.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// Initialize the MCP server subsystem
-int mcp_server_init(everything_plugin_api_t *api);
+// Server settings & state
+extern int g_mcp_enabled;
+extern char g_mcp_pipe_name[256];
+extern int g_mcp_http_port;
+extern int g_mcp_allow_preview;
+extern int g_mcp_max_results;
 
-// Start the MCP Named Pipe / IPC listener thread
-int mcp_server_start(const wchar_t *pipe_name, int tcp_port);
+// Host Everything database pointer
+extern void *g_everything_db;
 
-// Stop and join the worker threads
-int mcp_server_stop(void);
+// Lifecycle management
+int mcp_server_init(void *db);
+void mcp_server_apply_settings(void);
+void mcp_server_shutdown(void);
+void mcp_server_destroy(void);
 
-// Process a single JSON-RPC request line and produce a JSON-RPC response line
-char *mcp_process_json_rpc(const char *request_json, size_t request_len);
+// Tool execution helpers
+char *mcp_execute_search(const char *query, int offset, int max_count, int sort_type, int ascending);
+char *mcp_execute_file_info(const char *path);
+char *mcp_execute_preview(const char *path, int max_lines, int max_bytes);
+char *mcp_execute_status(void);
 
-// Free response memory allocated by mcp_process_json_rpc
-void mcp_free_response(char *response);
+// JSON-RPC dispatcher
+char *mcp_handle_jsonrpc(const char *json_request);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // MCP_SERVER_H
+#endif // _MCP_SERVER_H_

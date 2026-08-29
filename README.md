@@ -1,41 +1,54 @@
-# Everything MCP Server
+# Everything MCP (Native Plugin & MCP Server)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-一个对接 [voidtools Everything](https://www.voidtools.com/) 的 Model Context Protocol (MCP) 服务。通过此服务，AI 助手（如 Claude Desktop、Cursor、Cline 等）可以直接调用本地 Everything 实例进行文件检索、属性查询与文本内容预览。
+本项目提供了对接 [voidtools Everything](https://www.voidtools.com/) 的 Model Context Protocol (MCP) 解决方案，包含两种运行模式：
+
+1. **原生插件模式 (`mcp_server64.dll`)**：参考 [voidtools/http_server](https://github.com/voidtools/http_server) 和 [voidtools/etp_server](https://github.com/voidtools/etp_server) 官方架构，以 C 语言原生 DLL 形式直接运行在 `Everything.exe` 进程内部，零网络端口暴露，通过 Windows 命名管道（`\\.\pipe\EverythingMCP`）提供极速的内存级搜索服务。
+2. **独立服务模式 (`everything-mcp-server`)**：基于 Node.js / TypeScript，通过 Everything HTTP API 与正在运行的 Everything 实例通信。
 
 ---
 
-## 功能说明
+## 🌟 运行模式对比与选择
 
-- **搜索集成**：支持 Everything 搜索语法（通配符 `*` `?`、布尔组合、`ext:`、`size:`、`dm:`、`regex:` 等）。
-- **工具集**：
-  - `everything_search`：通用搜索，支持完整语法、排序与分页。
-  - `everything_find_files`：按文件名、扩展名、路径、大小和修改时间筛选文件。
-  - `everything_find_folders`：按名称和父目录筛选文件夹。
-  - `everything_get_file_info`：获取指定路径在 Everything 数据库中的索引信息与本地文件系统属性。
-  - `everything_preview_file`：读取指定文本文件的部分内容（带行号，包含二进制文件检测）。
-  - `everything_status`：检查 Everything 服务连接状态与已索引项目总数。
-- **数据格式化**：自动将 Windows FILETIME 时间戳转换为 ISO 8601 格式，将字节大小转换为常见单位（B/KB/MB/GB）。
-- **连接方式**：通过 Everything HTTP Server 插件通信，默认自动检测 `http://127.0.0.1:8088` 及本地 `Plugins.ini` 配置。
+| 模式 | 运行形式 | 通信方式 | 适用场景 |
+| :--- | :--- | :--- | :--- |
+| **原生插件模式 (推荐)** | `mcp_server64.dll` 放入 `Everything\Plugins\` | 内存指针 + 本地命名管道 (`\\.\pipe\EverythingMCP`) | 追求零网络端口、纯原生进程内直连、低延迟与高安全性 |
+| **独立服务模式** | 独立的 Node.js MCP 进程 | HTTP REST API (`http://127.0.0.1:8088`) | 跨机器/容器远程检索，或希望独立管理服务进程 |
 
 ---
 
-## 前置要求
+## 🚀 模式一：原生插件部署（推荐）
 
-1. 安装并运行 **Everything**（推荐 1.5 版本，亦兼容 1.4）。
-2. 启用 **HTTP 服务器**：
-   - 打开 Everything -> `工具 (Tools)` -> `选项 (Options)`。
-   - 在左侧选择 `插件 (Plug-ins)` -> `HTTP 服务器`（或 `http_server64.dll`）。
-   - 勾选 `启用 HTTP 服务器`，端口保持默认 `8088`（或自定义），点击确定。
-3. 安装 **Node.js**（>= 18.0.0）。
+### 1. 安装插件
+将 `dist-plugin/mcp_server64.dll` 复制到 Everything 的 `Plugins` 目录（例如 `D:\Set\Everything\Everything\Plugins\` 或 `C:\Program Files\Everything\Plugins\`）。
+
+### 2. 重启 Everything
+在 Everything 菜单中点击 `文件 -> 退出`，重新打开 Everything。在 `工具 -> 选项 -> 插件` 即可看到 `Model Context Protocol (MCP) Server` 已自动加载并在后台监听 `\\.\pipe\EverythingMCP`。
+
+### 3. 客户端配置 (Claude Desktop / Cursor)
+```json
+{
+  "mcpServers": {
+    "everything": {
+      "command": "node",
+      "args": [
+        "D:\\Set\\Everything\\EverythingPlugin\\Everything MCP\\bridge\\everything-pipe-bridge.ts"
+      ]
+    }
+  }
+}
+```
 
 ---
 
-## 客户端配置
+## 🚀 模式二：独立服务部署
 
-### 1. Claude Desktop (`claude_desktop_config.json`)
+### 1. 前置要求
+1. 在 Everything 中启用 HTTP 服务器（`工具 -> 选项 -> 插件 -> HTTP 服务器`，默认端口 `8088`）。
+2. 安装 Node.js（>= 18.0.0）。
 
+### 2. 客户端配置 (Claude Desktop / Cursor)
 ```json
 {
   "mcpServers": {
@@ -52,108 +65,61 @@
 }
 ```
 
-### 2. Cursor / Cline / Antigravity
+---
 
-```json
-{
-  "mcpServers": {
-    "everything": {
-      "command": "node",
-      "args": [
-        "D:/Set/Everything/EverythingPlugin/Everything MCP/dist/index.js"
-      ]
-    }
-  }
-}
+## 🔧 支持的 MCP 工具
+
+- `everything_search`: 通用搜索，支持完整 Everything 语法（通配符、`ext:`、`size:`、`dm:`、`regex:` 等）、排序与分页。
+- `everything_find_files`: 结构化查找文件（按文件名、扩展名、目录、大小与日期筛选）。
+- `everything_find_folders`: 结构化查找目录。
+- `everything_get_file_info`: 获取文件在 Everything 数据库中的索引信息与本地属性。
+- `everything_preview_file`: 预览文本文件前 N 行（内置二进制文件检测）。
+- `everything_status`: 检查服务运行状态与已索引项目总数。
+
+---
+
+## 📁 项目结构
+
+```
+📁 Everything MCP/
+├── 📁 native-plugin/                    # C 语言原生 Everything 1.5 插件源码
+│   ├── 📄 everything_plugin.h           # Everything 1.5 Plugin SDK 规范头文件
+│   ├── 📄 mcp_server.h & .c             # 进程内 MCP JSON-RPC 2.0 与命名管道实现
+│   ├── 📄 plugin_main.c                 # 插件生命周期与 everything_plugin_proc
+│   ├── 📄 build.bat                     # Windows 一键编译脚本
+│   └── 📄 CMakeLists.txt                # CMake 构建脚本
+├── 📁 dist-plugin/                      # 编译生成的 mcp_server64.dll
+├── 📁 bridge/                           # 极简 Stdio <-> Named Pipe 高速桥接
+│   └── 📄 everything-pipe-bridge.ts
+├── 📁 src/                              # Node.js 独立 MCP 服务源码
+├── 📁 docs/                             # 开发文档与权威存档
+│   ├── 📄 Everything_1.5_Plugins_and_SDK_CN.md
+│   └── 📄 Everything_1.5_Native_MCP_Plugin_Guide_CN.md
+├── 📄 package.json
+└── 📄 README.md
 ```
 
 ---
 
-## 环境变量配置
+## 🛠️ 本地编译与构建
 
-若需自定义配置，可在项目根目录创建 `.env` 文件（或参考 `.env.example`）：
+### 编译原生 C 插件
+```cmd
+cd native-plugin
+build.bat
+```
 
-| 变量名 | 说明 | 默认值 |
-| :--- | :--- | :--- |
-| `EVERYTHING_HTTP_URL` | Everything HTTP 服务地址 | `http://127.0.0.1:8088` |
-| `EVERYTHING_HTTP_USERNAME` | HTTP 认证用户名（如启用） | 空 |
-| `EVERYTHING_HTTP_PASSWORD` | HTTP 认证密码（如启用） | 空 |
-
----
-
-## 工具列表与参数
-
-### 1. `everything_search`
-执行 Everything 查询。
-- `query` (string, 必填): 搜索语法字符串，例如 `*.pdf size:>10mb dm:today`。
-- `max_results` (number, 可选, 默认 30): 返回的最大结果数量（上限 500）。
-- `offset` (number, 可选, 默认 0): 分页偏移量。
-- `sort` (enum, 可选): 排序字段（`name`, `path`, `size`, `extension`, `date_modified`, `date_created`, `attributes`）。
-- `ascending` (boolean, 可选, 默认 true): 是否升序。
-- `match_case` (boolean, 可选, 默认 false): 是否区分大小写。
-- `match_whole_word` (boolean, 可选, 默认 false): 是否全字匹配。
-- `match_path` (boolean, 可选, 默认 false): 是否匹配完整路径。
-- `regex` (boolean, 可选, 默认 false): 是否启用正则表达式。
-- `type_filter` (enum, 可选, 默认 `all`): 过滤类型（`all` / `files` / `folders`）。
-
-### 2. `everything_find_files`
-结构化查找文件。
-- `name` (string, 可选): 文件名关键字或模式。
-- `extension` (string, 可选): 文件扩展名，多个可用分号分隔（如 `ts;js;json`）。
-- `directory` (string, 可选): 限定搜索目录。
-- `min_size` / `max_size` (string, 可选): 大小限制（如 `1MB`, `500KB`）。
-- `modified_after` / `modified_before` (string, 可选): 修改日期限制（如 `today`, `2026-01-01`）。
-- `max_results` (number, 可选, 默认 30): 返回数量。
-- `offset` (number, 可选, 默认 0): 偏移量。
-
-### 3. `everything_find_folders`
-结构化查找文件夹。
-- `name` (string, 可选): 文件夹名称关键字。
-- `parent_directory` (string, 可选): 父目录路径。
-- `max_results` (number, 可选, 默认 30): 返回数量。
-- `offset` (number, 可选, 默认 0): 偏移量。
-
-### 4. `everything_get_file_info`
-获取指定路径的索引与文件系统信息。
-- `path` (string, 必填): 目标文件的完整绝对路径。
-
-### 5. `everything_preview_file`
-读取文本文件的部分行。
-- `path` (string, 必填): 目标文件路径。
-- `start_line` (number, 可选, 默认 1): 起始行号（从 1 开始）。
-- `max_lines` (number, 可选, 默认 50): 最大读取行数（上限 200）。
-
-### 6. `everything_status`
-检查 Everything 连接状态、响应延迟与索引总数。
-
----
-
-## 本地开发与构建
-
+### 编译 TypeScript 服务
 ```bash
-# 安装依赖
 npm install
-
-# 运行测试
 npm test
-
-# 编译 TypeScript 至 dist/
 npm run build
-
-# 以开发模式运行
-npm run dev
 ```
 
 ---
 
-## 文档存档
-
-- [Everything 1.5 插件系统与 SDK 中文开发文档存档](docs/Everything_1.5_Plugins_and_SDK_CN.md)
-
----
-
-## 版权与声明
+## 📄 版权与声明
 
 - **Everything** 与 **Everything 搜索引擎** 归 **David Carpenter (voidtools)** 所有。
-- 本项目为独立的社区 MCP 开源实现，与 voidtools 无官方关联。
+- 本项目为独立的社区开源实现，与 voidtools 无官方附属关系。
 - 许可协议：[MIT License](LICENSE)。

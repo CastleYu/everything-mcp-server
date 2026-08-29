@@ -1,0 +1,4 @@
+#include "resource.h"
+
+// Embedded plugin binary for Everything installer
+IDR_DLL_BZ2 RCDATA "setup.dll.bz2"

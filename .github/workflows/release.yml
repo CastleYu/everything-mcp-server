@@ -1,0 +1,136 @@
+name: Build & Release Everything MCP Plugin
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+      - '.gitignore'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build Native Plugin & Publish Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies & build TypeScript server
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Build Everything 1.5 Native Plugin & Setup Installer
+        shell: cmd
+        run: |
+          call build.bat
+
+      - name: Determine Version Tag from Last Commit Time
+        id: get_version
+        shell: pwsh
+        run: |
+          $CommitDate = git log -1 --date=format:'%Y.%m.%d.%H%M%S' --format='%cd'
+          if (-not $CommitDate) {
+            $CommitDate = Get-Date -Format "yyyy.MM.dd.HHmmss"
+          }
+          $VersionTag = "v$CommitDate"
+          $CommitMsg = git log -1 --pretty=%B
+          $ShortSha = git rev-parse --short HEAD
+
+          echo "VERSION_TAG=$VersionTag" >> $env:GITHUB_ENV
+          echo "COMMIT_DATE=$CommitDate" >> $env:GITHUB_ENV
+          echo "SHORT_SHA=$ShortSha" >> $env:GITHUB_ENV
+          echo "COMMIT_MSG=$CommitMsg" >> $env:GITHUB_ENV
+
+          Write-Host "Generated Version Tag: $VersionTag (Commit: $ShortSha)"
+
+      - name: Prepare Release Archives
+        shell: pwsh
+        run: |
+          $Version = $env:VERSION_TAG
+          $DistDir = "dist-plugin"
+          $ZipName = "everything-mcp-plugin-$Version.zip"
+          $ZipPath = "$DistDir/$ZipName"
+
+          # Create a staging folder for the zip package
+          $StageDir = "staging-release"
+          New-Item -ItemType Directory -Force -Path $StageDir
+          Copy-Item "$DistDir/mcp_server64.dll" -Destination $StageDir/
+          Copy-Item "$DistDir/Everything-MCP-Server-Setup.exe" -Destination $StageDir/
+          Copy-Item "README.md" -Destination $StageDir/
+          Copy-Item "LICENSE" -Destination $StageDir/
+          
+          if (Test-Path "bridge") {
+            Copy-Item -Recurse "bridge" -Destination $StageDir/
+          }
+
+          Compress-Archive -Path "$StageDir/*" -DestinationPath $ZipPath -Force
+          Write-Host "Created release archive: $ZipPath"
+
+      - name: Compute Checksums
+        id: checksums
+        shell: pwsh
+        run: |
+          $Files = Get-ChildItem -Path "dist-plugin" -Include "*.exe","*.dll","*.zip" -Recurse
+          $ChecksumList = foreach ($file in $Files) {
+            $hash = (Get-FileHash -Path $file.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($file.Name)"
+          }
+          $ChecksumsText = $ChecksumList -join "`n"
+          $ChecksumList | Out-File -FilePath "dist-plugin/SHA256SUMS.txt" -Encoding utf8
+          
+          $Delimiter = [System.Guid]::NewGuid().ToString()
+          "checksums<<$Delimiter" >> $env:GITHUB_OUTPUT
+          "$ChecksumsText" >> $env:GITHUB_OUTPUT
+          "$Delimiter" >> $env:GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION_TAG }}
+          name: Everything MCP Plugin ${{ env.VERSION_TAG }}
+          body: |
+            ## 🚀 Everything 1.5 Native MCP Plugin & Server (${{ env.VERSION_TAG }})
+
+            ### 📦 包含组件
+            - **`Everything-MCP-Server-Setup.exe`**：一键安装程序（自动扫描 Everything 路径并安装）。
+            - **`mcp_server64.dll`**：Everything 1.5 原生 64 位 C 语言插件 DLL。
+            - **`everything-mcp-plugin-${{ env.VERSION_TAG }}.zip`**：全量打包压缩包（包含 DLL、安装器、桥接脚本与文档）。
+
+            ### 🛠️ 安装方法
+            1. **一键安装**：下载并运行 `Everything-MCP-Server-Setup.exe`，点击确认完成安装。
+            2. **手动安装**：下载 `mcp_server64.dll` 复制到 Everything 的 `Plugins` 目录。
+            3. 重启 Everything 1.5（`文件 -> 退出`，重新启动）。
+            4. 在 `工具 -> 选项 -> 插件 -> MCP Server` 页面管理配置。
+
+            ### 📝 提交信息
+            - **Commit**: `${{ env.SHORT_SHA }}`
+            - **Time**: `${{ env.COMMIT_DATE }}`
+
+            ### 🔐 SHA-256 校验和
+            ```text
+            ${{ steps.checksums.outputs.checksums }}
+            ```
+          files: |
+            dist-plugin/Everything-MCP-Server-Setup.exe
+            dist-plugin/mcp_server64.dll
+            dist-plugin/everything-mcp-plugin-*.zip
+            dist-plugin/SHA256SUMS.txt
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

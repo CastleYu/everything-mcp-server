@@ -23,25 +23,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-
-      - name: Install dependencies & build TypeScript server
-        run: |
-          npm ci || npm install
-          npm run build
-
-      - name: Build Everything 1.5 Native Plugin & Setup Installer
-        shell: cmd
-        run: |
-          call build.bat
-
-      - name: Determine Version Tag from Last Commit Time
-        id: get_version
+      - name: Determine Version Tag & Check If Already Released
+        id: check_version
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $CommitDate = git log -1 --date=format:'%Y.%m.%d.%H%M%S' --format='%cd'
           if (-not $CommitDate) {
@@ -56,9 +42,46 @@ jobs:
           echo "SHORT_SHA=$ShortSha" >> $env:GITHUB_ENV
           echo "COMMIT_MSG=$CommitMsg" >> $env:GITHUB_ENV
 
-          Write-Host "Generated Version Tag: $VersionTag (Commit: $ShortSha)"
+          Write-Host "Target Version Tag: $VersionTag (Commit: $ShortSha)"
+
+          # Check if Release or Git Tag already exists
+          $ReleaseExists = $false
+          gh release view "$VersionTag" >$null 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            $ReleaseExists = $true
+          }
+
+          $TagExists = (git tag -l "$VersionTag") -ne ""
+
+          if ($ReleaseExists -or $TagExists) {
+            Write-Host "::warning::Version $VersionTag has ALREADY been packaged and released! Skipping build and release process."
+            echo "already_exists=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "Version $VersionTag is new. Proceeding with build and release."
+            echo "already_exists=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Setup Node.js
+        if: steps.check_version.outputs.already_exists != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies & build TypeScript server
+        if: steps.check_version.outputs.already_exists != 'true'
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Build Everything 1.5 Native Plugin & Setup Installer
+        if: steps.check_version.outputs.already_exists != 'true'
+        shell: cmd
+        run: |
+          call build.bat
 
       - name: Prepare Release Archives
+        if: steps.check_version.outputs.already_exists != 'true'
         shell: pwsh
         run: |
           $Version = $env:VERSION_TAG
@@ -82,6 +105,7 @@ jobs:
           Write-Host "Created release archive: $ZipPath"
 
       - name: Compute Checksums
+        if: steps.check_version.outputs.already_exists != 'true'
         id: checksums
         shell: pwsh
         run: |
@@ -99,6 +123,7 @@ jobs:
           "$Delimiter" >> $env:GITHUB_OUTPUT
 
       - name: Create GitHub Release
+        if: steps.check_version.outputs.already_exists != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION_TAG }}

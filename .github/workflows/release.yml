@@ -51,7 +51,7 @@ jobs:
             $ReleaseExists = $true
           }
 
-          $TagExists = (git tag -l "$VersionTag") -ne ""
+          $TagExists = [bool]((git tag -l "$VersionTag") | Where-Object { $_ -eq "$VersionTag" })
 
           if ($ReleaseExists -or $TagExists) {
             Write-Host "::warning::Version $VersionTag has ALREADY been packaged and released! Skipping build and release process."

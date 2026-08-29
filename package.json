@@ -1,0 +1,38 @@
+{
+  "name": "everything-mcp-server",
+  "version": "1.0.0",
+  "description": "Model Context Protocol (MCP) server for voidtools Everything 1.5/1.4 search engine",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "everything-mcp": "./dist/index.js"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "tsx test/test-client.ts"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "everything",
+    "voidtools",
+    "search",
+    "windows",
+    "ai"
+  ],
+  "author": "Antigravity",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.0",
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}
